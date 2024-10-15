@@ -1,0 +1,140 @@
+---
+title: "NYPD Shooting Incident Data Report"
+author: "A. Gi"
+date: "2024-10-07"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup}
+library(tidyverse)
+library(lubridate)
+library(ggrepel)
+```
+
+```{r}
+### Get the NYPD data from the website
+url_in_nypd <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+
+nypd <- read_csv(url_in_nypd)
+```
+
+The data is imported from the appropriate site and read into the R markdown.
+
+```{r}
+nypd <- subset(nypd, select = -c(INCIDENT_KEY, OCCUR_TIME, LOC_OF_OCCUR_DESC:STATISTICAL_MURDER_FLAG, X_COORD_CD:Lon_Lat))
+
+nypd <- nypd %>% mutate(OCCUR_DATE = mdy(OCCUR_DATE))
+summary(nypd)
+```
+
+The data set is then tidied. I got rid of columns that are not important to my analysis and changed certain variables into appropriate data types.
+
+```{r}
+perp_freq <- table(nypd$PERP_AGE_GROUP)
+perp_freq <- as.data.frame(perp_freq)
+rows_to_remove <- c(1,3,4,6,10)
+perp_freq <- perp_freq[-rows_to_remove, ]
+colnames(perp_freq) <- c("Age_Group", "Incidence")
+perp_freq$Percentage <- round(perp_freq$Incidence/sum(perp_freq$Incidence)*100, 1)
+perp_freq
+
+
+vic_freq <- table(nypd$VIC_AGE_GROUP)
+vic_freq <- as.data.frame(vic_freq)
+vic_freq <- vic_freq[-2, ]
+colnames(vic_freq) <- c("Age_Group", "Incidence")
+vic_freq$Percentage <- round(vic_freq$Incidence/sum(vic_freq$Incidence)*100, 1)
+vic_freq
+
+
+nypd_2020 <- nypd %>%
+  filter(format(OCCUR_DATE, "%Y") == "2020")
+ny_borough <- table(nypd_2020$BORO)
+ny_borough <- as.data.frame(ny_borough)
+colnames(ny_borough) <- c("NYC Borough", "Incidence")
+ny_borough$Percent_of_Incidence <- round(ny_borough$Incidence/sum(ny_borough$Incidence)*100,1)
+ny_borough
+                                         
+                                         
+nyc_borough_pop <- data.frame(
+  Borough = c("BRONX", "BROOKLYN", "MANHATTAN", "QUEENS", "STATEN ISLAND"), Population = c(1472654, 2736074, 1694251, 2405464, 495747), stringsAsFactors = FALSE
+  )
+
+nyc_borough_pop$Percent_of_nyc <- round((nyc_borough_pop$Population/sum(nyc_borough_pop$Population))*100,1)
+nyc_borough_pop                                         
+
+
+ny_borough$Percent_of_nyc <- nyc_borough_pop$Percent_of_nyc
+ny_borough
+
+correlation <- cor(ny_borough$Percent_of_Incidence,ny_borough$Percent_of_nyc)
+
+ny_regression <- lm(Percent_of_nyc ~ Percent_of_Incidence, data = ny_borough)
+summary(ny_regression)
+```
+
+
+In this analysis, I looked at the frequencies of perpetrators by age group as well as the frequencies of victims by age group. There was some missing data that was removed, as well as few data points that didn’t make sense in this context. Lastly, I looked at the incidences by the NYC boroughs. A further analysis/next step would be to then compare the relative population of each borough to their percentages of shootings, to see whether any borough proportionally has more shootings. Looking at just the number of shootings in each borough by themselves can be misleading, without comparing their populations.
+I pulled that data from the US Census Bureau and added a column that showed what percent of the city each borough made up with their populations. That way, one could compare the incidences to its population proportion by borough.
+
+*Populations of each boroughs came from the 2020 census data:*
+
+Bronx - “https://data.census.gov/profile/Bronx_borough,_Bronx_County,_New_York?g=060XX00US3600508510”
+
+Brooklyn - “https://data.census.gov/profile/Brooklyn_borough,_Kings_County,_New_York?g= 060XX00US3604710022”
+
+Manhattan - “https://data.census.gov/profile/Manhattan_borough,_New_York_County,_New_York?g= 060XX00US3606144919”
+
+Queens - “https://data.census.gov/profile/Queens_borough,_Queens_County,_New_York?g=060XX00US3608160323”
+
+Staten Island - “https://data.census.gov/profile/Staten_Island_borough,_Richmond_County,_New_ York?g=060XX00US3608570915”
+
+Since the data is from the 2020 census, the data points have been filtered to only include incidents from 2020 to have a fair comparison.
+
+
+```{r}
+perp_freq$Label <- paste("(", perp_freq$Percentage, "%)", sep = "")
+ggplot(perp_freq, aes(x = "", y = Incidence, fill = Age_Group)) +
+  geom_bar(stat = "identity", width = 1) + coord_polar("y", start = 0) +
+  theme_void() + geom_text(aes(label = Label), 
+                           position = position_stack(vjust = 0.5), size = 3) +
+  labs(title = "Pie Chart of Perpetrator Incidences per Age Group")
+
+
+vic_freq$Label <- paste("(", vic_freq$Percentage, "%)", sep = "")
+
+ggplot(vic_freq, aes(x = "", y = Incidence, fill = Age_Group)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) + theme_void() + 
+  geom_text_repel(aes(label = Label), 
+                  position = position_stack(vjust = 0.5), size = 3) + 
+  labs(title = "Pie Chart of Victim Incidences per Age Group")
+
+
+ggplot(ny_borough, aes(x = Percent_of_Incidence, y = Percent_of_nyc)) + 
+  geom_point(color = "blue", size = 3) + 
+  geom_smooth(method = "lm", color = "red", se = FALSE) +
+  labs(title = paste("Percent of Incidence vs Percent of NYC (
+                     Correlation:", round(correlation, 4), ")"),
+       x = "Percent of Incidence", y = "Percent of NYC")
+```
+
+Here I’ve made two pie charts of what was analyzed above: the percentages of perpetrators and victims of the shootings by their age range.
+There’s also a line of best fit looking at what percent of NYC each borough makes up vs percent of incidences of the shootings. As can be seen, the correlation is there but not too strong: 0.7608 and r-squared value of 0.58. Given this, we cannot say that the differences in rate of incidents across boroughs is only accounted for by their populations. There are likely many other factors influencing the shooting incidence rates, like socio-economic factors: income, education, access to housing, etc.
+This also raises questions like what does the percentages of each age group as the perpetrators and victims compare to the percentages of each age group in the actual population? This is a path to further explore.
+
+## Conclusion
+
+To conclude, we can say that the differences in shooting incidences across boroughs can be mainly explained by the differences in their population density, but not totally. This is an area to explore, to see if socio- economic factors like income and access to housing can explain the rest of the differences. 18-24 year-olds and 25-44 year-olds make up a majority of the perpetrators of these shootings (35.6% & 33.4%) as well as the victims of the shootings as well (36.4% & 45.4%).
+Looking at the perpetrator data and pie chart, there is a very big percent of perpetrators that are unknown and were unidentified (17.4%). This data could skew the results any which way. This gives us a sense of bias in that all we know comes from those that were caught, and those that weren’t (and perhaps results in them committing more of the shootings in our data set) are not represented in the perpetrators data.
+
+Another aspect of this data that is questionable comes from the fact that this data spans many years (17 years to be exact). Reporting practices and policies may have changed, and thus might reflect differently across the years. This bias might also include law enforcement practice biases. We have no knowledge of the differences in policing across the neighborhoods and boroughs, which would skew the amount of incidents reported and perpetrators caught across these locations. These practices might have changed across the years, leading to increases of decreases in policing in certain locations, subsequently resulting in increases/decreases of incidents reported due to these practices.
+
+I tried not to let my personal biases affect my analysis. There may have been personal bias about which boroughs have higher incidents, which I tried to mitigate by bringing in data about each boroughs population. The best way to mitigate personal bias is to let the data tell you its patterns without looking for certain patterns from the start.
+
+
+
+
+
